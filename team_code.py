@@ -116,7 +116,7 @@ def train_dx_model(data_folder, model_folder, verbose):
         print('Training the model on the data...')
 
     # Define parameters for random forest classifier and regressor.
-    n_estimators   = 12  # Number of trees in the forest.
+    n_estimators   = 20  # Number of trees in the forest.
     max_leaf_nodes = 34  # Maximum number of leaf nodes in each tree.
     random_state   = 56  # Random state; set for reproducibility.
 
@@ -177,6 +177,7 @@ def run_dx_model(dx_model, record, signal, verbose):
     # Extract features.
     features = extract_features(record)
     features = features.reshape(1, -1)
+
 
     # Get model probabilities.
     probabilities = model.predict_proba(features)
