@@ -8,10 +8,22 @@
 # Optional libraries, functions, and variables. You can change or remove them.
 #
 ################################################################################
-
+from PIL import Image
+import torch
+import torch.nn as nn
+from torchvision import transforms
+from pytorch_wavelets import DWTForward
+import torch.nn.functional as F
+from torchvision.transforms import ToTensor
+import matplotlib.pyplot as plt
+from torchvision.transforms import ToPILImage
 import joblib
 from torch.utils.data import DataLoader, Dataset
 import PIL
+import torch
+import torch.nn as nn
+from pytorch_wavelets import DWTForward
+from PIL import ImageOps
 from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
 from torch import nn, optim
@@ -19,9 +31,9 @@ import torch
 from PIL import Image
 import  pandas as pd
 from helper_code import *
-import torch.nn.functional as F
+import pywt
 from sklearn.preprocessing import LabelEncoder
-import matplotlib.pyplot as plt
+
 
 
 ################################################################################
@@ -77,7 +89,24 @@ def train_digitization_model(data_folder, model_folder, verbose):
         print('Done.')
         print()
 
+class HWDownsampling(nn.Module):
+    def __init__(self, in_channel, out_channel):
+        super(HWDownsampling, self).__init__()
+        self.wt = DWTForward(J=1, wave='haar', mode='zero')
+        self.conv_bn_relu = nn.Sequential(
+            nn.Conv2d(in_channel * 4, out_channel, kernel_size=1, stride=1),
+            nn.BatchNorm2d(out_channel),
+            nn.ReLU(inplace=True),
+        )
 
+    def forward(self, x):
+        yL, yH = self.wt(x)
+        y_HL = yH[0][:, :, 0, ::]
+        y_LH = yH[0][:, :, 1, ::]
+        y_HH = yH[0][:, :, 2, ::]
+        x = torch.cat([yL, y_HL, y_LH, y_HH], dim=1)
+        x = self.conv_bn_relu(x)
+        return x
 class CustomDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
         self.img_labels = pd.read_csv(annotations_file)
@@ -98,6 +127,34 @@ class CustomDataset(Dataset):
             label = self.target_transform(label)
         return image, label
 
+def img_proprecessing(img):
+    width, height = img.size
+    pixels = 500
+    cropped_image = img.crop((0, pixels, width, height))
+    image_data = cropped_image.convert('RGB')
+    # 分割图像为RGB三个通道
+    r, g, b = image_data.split()
+    # 保存红色通道图像，并将其转换为二值图像
+    # 设定二值化的阈值
+    threshold = 128
+    # 使用阈值将红色通道转换为二值图像
+    binary_r = r.point(lambda p: p > threshold and 255)
+    # 设置图像保存时的DPI为300
+    image_data = binary_r
+    # 已经将图片消除网格
+    transform = ToTensor()
+    image_data = transform(image_data)  # 将PIL图像转换为Tensor
+
+    # 添加一个批次维度，因为PyTorch模型通常期望这样
+    image_data = image_data.unsqueeze(0)
+    image_data = image_data.repeat(1, 3, 1, 1)  # 结果形状将是[1, 3, 1200, 2200]
+    downsampling_layer = HWDownsampling(3, 3)
+    output_data = downsampling_layer(image_data)
+    output_data = downsampling_layer(output_data)
+    output_data = F.interpolate(output_data, size=(224, 224), mode="area")
+    to_img = ToPILImage()
+    img_data = output_data.squeeze(0)
+    return img_data
 
 
 # Train your dx classification model.
@@ -156,18 +213,13 @@ def train_dx_model(data_folder, model_folder, verbose):
 
     # Save the DataFrame as a CSV file
     df.to_csv('./annotations.csv', index=False)
-
     ################################################################################
     transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.RandomRotation(20),
-        transforms.RandomHorizontalFlip(),
-        transforms.CenterCrop(224),
-        transforms.Lambda(lambda img: img.convert('RGB')),
-        transforms.ToTensor(),
+        # 插入自定义的裁剪操作
+        transforms.Lambda(lambda img: img_proprecessing(img)),
+        # 正则化Tensor图像
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
-
 
     train_losses = []
     train_accuracies = []
@@ -175,7 +227,7 @@ def train_dx_model(data_folder, model_folder, verbose):
     valid_accuracies = []
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
     # 分成训练和验证集
     train_size = int(0.8 * len(dataset))
@@ -347,6 +399,10 @@ def run_dx_model(dx_model, record, signal, verbose):
     # 确定图像预处理
     transform = transforms.Compose([
         transforms.Resize(256),
+        transforms.RandomRotation(20),
+        # 添加自定义的小波变换在这里
+        transforms.Lambda(lambda img: wavelet_transform(img, mode='haar', level=1)),
+        transforms.RandomHorizontalFlip(),
         transforms.CenterCrop(224),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
