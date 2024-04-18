@@ -166,6 +166,10 @@ def train_dx_model(data_folder, model_folder, verbose):
         print('Training the dx classification model...')
         print('Finding the Challenge data...')
 
+    print(torch.__version__)
+    print(torch.cuda.is_available())
+    print(torch.version.cuda)
+
     records = find_records(data_folder)
     #print(data_folder)
     num_records = len(records)
@@ -227,18 +231,18 @@ def train_dx_model(data_folder, model_folder, verbose):
     valid_accuracies = []
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=True)
 
     # 分成训练和验证集
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
-    trainloader = DataLoader(train_dataset, batch_size=128, shuffle=True)
-    validloader = DataLoader(test_dataset, batch_size=128, shuffle=False)
+    trainloader = DataLoader(train_dataset, batch_size=256, shuffle=True)
+    validloader = DataLoader(test_dataset, batch_size=256, shuffle=False)
 
     # Define the model
-    local_weights_path = './resnet50.pth'
-    model = models.resnet50(pretrained=False)
+    local_weights_path = "./resnet18.pth"
+    model = models.resnet18(pretrained=False)
     model.load_state_dict(torch.load(local_weights_path))
     num_ftrs = model.fc.in_features
     num_classes = 2
@@ -254,7 +258,7 @@ def train_dx_model(data_folder, model_folder, verbose):
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     loss = torch.nn.CrossEntropyLoss()
 
-    num_epochs = 20
+    num_epochs = 30
 
     for epoch in range(num_epochs):
         # 在训练阶段
@@ -372,8 +376,8 @@ def load_dx_model(model_folder, verbose):
     model_file = os.path.join(model_folder, 'dx_model.pth')
 
     # Initialize the model structure
-    local_weights_path = './resnet50.pth'
-    model = models.resnet50(pretrained=False)
+    local_weights_path = "./resnet18.pth"
+    model = models.resnet18(pretrained=False)
     model.load_state_dict(torch.load(local_weights_path))
     num_ftrs = model.fc.in_features
     num_classes = 2
@@ -387,7 +391,7 @@ def load_dx_model(model_folder, verbose):
 
 def run_dx_model(dx_model, record, signal, verbose):
     # 确保模型在正确的设备上
-    local_weights_path = './resnet50.pth'
+    #local_weights_path = './resnet50.pth'
     model = dx_model
     print(model.parameters())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -398,13 +402,9 @@ def run_dx_model(dx_model, record, signal, verbose):
 
     # 确定图像预处理
     transform = transforms.Compose([
-        transforms.Resize(256),
-        transforms.RandomRotation(20),
-        # 添加自定义的小波变换在这里
-        transforms.Lambda(lambda img: wavelet_transform(img, mode='haar', level=1)),
-        transforms.RandomHorizontalFlip(),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
+        # 插入自定义的裁剪操作
+        transforms.Lambda(lambda img: img_proprecessing(img)),
+        # 正则化Tensor图像
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
     # 找到所有记录
@@ -421,14 +421,12 @@ def run_dx_model(dx_model, record, signal, verbose):
     image_tensor = transform(image).unsqueeze(0).to(device)
 
     # 创建一个与类别索引对应的标签列表
-    labels = ["normal", "abnormal"]
+    labels = ["abnormal", "normal"]
 
     with torch.no_grad():
-        outputs = model(image_tensor)
-        #print(outputs)
-        _, preds = torch.max(abs(outputs), 1)
-        # 使用索引从标签集中取出对应的标签
-        preds_label = [labels[p] for p in preds]
+        outputs = model(image_tensor)  # 获取模型输出
+        _, preds = torch.max(outputs, 1)  # 获取最大的索引
+        preds_label = [labels[p] for p in preds]  # 根据索引获取标签
         print(f'Image: {image_path}, Prediction: {preds_label[0]}')  # 假设每轮循环处理的是一张图片
 
     return preds_label
