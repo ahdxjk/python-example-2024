@@ -9,3 +9,4 @@ WORKDIR /challenge
 
 ## Include the following line if you have a requirements.txt file.
 RUN pip install -r requirements.txt
+RUN pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu121
