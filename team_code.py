@@ -231,23 +231,22 @@ def train_dx_model(data_folder, model_folder, verbose):
     valid_accuracies = []
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=256, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
 
     # 分成训练和验证集
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
-    trainloader = DataLoader(train_dataset, batch_size=256, shuffle=True)
-    validloader = DataLoader(test_dataset, batch_size=256, shuffle=False)
+    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    validloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
     # Define the model
-    local_weights_path = "./resnet18.pth"
-    model = models.resnet18(pretrained=False)
+    local_weights_path = "./efficientnet_b3.pth"
+    model = models.efficientnet_b3(weights=None)
     model.load_state_dict(torch.load(local_weights_path))
-    num_ftrs = model.fc.in_features
-    num_classes = 2
 
-    model.fc = nn.Linear(num_ftrs, num_classes)
+
+    model.classifier[1] = torch.nn.Linear(in_features=1536, out_features=2)
     # Move the model to GPU if available
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
@@ -258,7 +257,7 @@ def train_dx_model(data_folder, model_folder, verbose):
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
     loss = torch.nn.CrossEntropyLoss()
 
-    num_epochs = 30
+    num_epochs = 5
 
     for epoch in range(num_epochs):
         # 在训练阶段
@@ -368,37 +367,31 @@ def run_digitization_model(digitization_model, record, verbose):
 
 def save_dx_model(model_folder, model):
     filename = os.path.join(model_folder, 'dx_model.pth')
-    torch.save(model, filename)  # Save the entire model_state
+    torch.save(model.state_dict(), filename)  # Save the entire model_state
 
 
 def load_dx_model(model_folder, verbose):
     # Assume the model file is named 'dx_model.pth'
     model_file = os.path.join(model_folder, 'dx_model.pth')
-
-    # Initialize the model structure
-    local_weights_path = "./resnet18.pth"
-    model = models.resnet18(pretrained=False)
-    model.load_state_dict(torch.load(local_weights_path))
-    num_ftrs = model.fc.in_features
-    num_classes = 2
-    model.fc = nn.Linear(num_ftrs, num_classes)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    # Initialize the model structure
+    model = models.efficientnet_b3(weights=None)
+    model.classifier[1] = torch.nn.Linear(in_features=1536, out_features=2)
+    model.load_state_dict(torch.load(model_file, map_location=device))
     # Load the model weights
-    torch.load(model_file, map_location=device)
+
 
     return model
 
 
 def run_dx_model(dx_model, record, signal, verbose):
     # 确保模型在正确的设备上
-    #local_weights_path = './resnet50.pth'
     model = dx_model
-    print(model.parameters())
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # 确保模型在设备上
+    model.eval()
     model = model.to(device)
     #print(model.state_dict())
-    model.eval()
 
     # 确定图像预处理
     transform = transforms.Compose([
@@ -421,15 +414,17 @@ def run_dx_model(dx_model, record, signal, verbose):
     image_tensor = transform(image).unsqueeze(0).to(device)
 
     # 创建一个与类别索引对应的标签列表
-    labels = ["abnormal", "normal"]
+    labels = {0: "Abnormal", 1: "Normal"}
 
     with torch.no_grad():
         outputs = model(image_tensor)  # 获取模型输出
-        _, preds = torch.max(outputs, 1)  # 获取最大的索引
-        preds_label = [labels[p] for p in preds]  # 根据索引获取标签
-        print(f'Image: {image_path}, Prediction: {preds_label[0]}')  # 假设每轮循环处理的是一张图片
+        predict = torch.softmax(outputs, dim=0)  # 获取最大的索引
+        _, preds_label = torch.max(outputs.data, 1)
+        predicted_labels = [labels[idx.item()] for idx in preds_label]
+        # 根据索引获取标签
+        print(f'Image: {image_path}, Prediction: {predicted_labels}')  # 假设每轮循环处理的是一张图片
 
-    return preds_label
+    return predicted_labels
 
 
 

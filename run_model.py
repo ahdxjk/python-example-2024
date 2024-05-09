@@ -36,7 +36,6 @@ def run(args):
     # You can use these functions to perform tasks, such as loading your model(s), that you only need to perform once.
     digitization_model = load_digitization_model(args.model_folder, args.verbose) ### Teams: Implement this function!!!
     dx_model = load_dx_model(args.model_folder, args.verbose) ### Teams: Implement this function!!!
-
     # Find the Challenge data.
     if args.verbose:
         print('Finding the Challenge data...')
