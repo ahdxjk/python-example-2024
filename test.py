@@ -12,7 +12,7 @@ import re
 
 
 def extract_info():
-    text = load_header("Y:\python-example-2024-main\ptb-xl/records500/00000/00001_hr")
+    text = load_header("E:\cinc2024\python-example-2024-main\ptb-xl/records100/05000/05000_lr")
     # 使用正则表达式查找各项数据，返回的是一个元组
     age_match = re.search(r"#Age: (\d+)", text)
     sex_match = re.search(r"#Sex: (\w+)", text)
@@ -26,22 +26,13 @@ def extract_info():
     weight = int(weight_match.group(1)) if weight_match else None
     # 提取身高，如果身高为"Unknown"或者没有找到身高信息，则返回None
     height = int(height_match.group(1)) if height_match and height_match.group(1).isdigit() else None
+    return age, sex, weight, height
 
-    age = age if age is not None else -1
-    sex = sex if sex is not None else -1
-    weight = weight if weight is not None else -1
-    height = height if height is not None else -1
-    # 创建一个包含所有特征的张量
-    features = torch.tensor([age, sex, weight, height], dtype=torch.int)
-    return features
 
-#train_models("Y:\python-example-2024-main\ptb-xl/records500/00000", "Y:\python-example-2024-main\model", verbose=1) ###
-#print(extract_info())
-info = "Y:\python-example-2024-main\ptb-xl/records500/00000"
-records = find_records(info)
-num_records = len(records)
-for i in range(num_records):
-    width = len(str(num_records))
-    data_record = os.path.join(info, records[i])
-    digitization_model, classification_model = load_models("Y:\python-example-2024-main\model",verbose=1)
-    run_models(data_record,digitization_model, classification_model, verbose=1)
+
+
+
+train_dx_model("E:\cinc2024\python-example-2024-main\ptb-xl/records100/05000", "E:\cinc2024\python-example-2024-main\model", verbose=1) ### Teams: Implement this function!!!
+
+#load_dx_model("E:\cinc2024\python-example-2024-main\model",verbose=1)
+#run_dx_model(load_dx_model("E:\cinc2024\python-example-2024-main\model",verbose=1),"E:\cinc2024\python-example-2024-main\ptb-xl/records100/00000_test","E:\cinc2024\python-example-2024-main/test_outputs", verbose=1)
