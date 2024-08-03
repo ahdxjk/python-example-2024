@@ -7,47 +7,24 @@
 # Optional libraries, functions, and variables. You can change or remove them.
 #
 ################################################################################
-from torchvision import datasets, models, transforms
 from torch.utils.data import DataLoader
 from PIL.Image import Image
-from torch import nn, optim
-import joblib
-import numpy as np
-import os
-import torch
-from sklearn.preprocessing import LabelEncoder, MultiLabelBinarizer
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-import sys
-from torch.utils.data import DataLoader, Dataset
 from sklearn.preprocessing import MultiLabelBinarizer
-import  pandas as pd
 from torchvision.models import efficientnet_b3
-from helper_code import *
-from PIL import Image
-import torch
-import torch.nn as nn
-from torchvision import transforms
-from pytorch_wavelets import DWTForward
 import torch.nn.functional as F
 from torchvision.transforms import ToTensor
-import matplotlib.pyplot as plt
 from torchvision.transforms import ToPILImage
 import joblib
-from torch.utils.data import DataLoader, Dataset
-import PIL
-import torch
-import torch.nn as nn
+from torch.utils.data import Dataset
 from pytorch_wavelets import DWTForward
-from PIL import ImageOps
-from torchvision import datasets, models, transforms
+from torchvision import  transforms
 from torch.utils.data import DataLoader
 from torch import nn, optim
 import torch
 from PIL import Image
 import  pandas as pd
 from helper_code import *
-import pywt
-from sklearn.preprocessing import LabelEncoder
+
 
 import warnings
 from sklearn.exceptions import InconsistentVersionWarning
@@ -80,6 +57,7 @@ class HWDownsampling(nn.Module):
         x = torch.cat([yL, y_HL, y_LH, y_HH], dim=1)
         x = self.conv_bn_relu(x)
         return x
+
 #预处理其数据
 class CustomDataset(Dataset):
     def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
@@ -114,7 +92,7 @@ class CustomDataset(Dataset):
 
 def img_proprecessing(img):
     width, height = img.size
-    pixels = 500
+    pixels = 300
     cropped_image = img.crop((0, pixels, width, height))
     image_data = cropped_image.convert('RGB')
     #image_data.show()
@@ -228,18 +206,9 @@ def train_models(data_folder, model_folder, verbose):
         # Extract the features from the image; this simple example uses the same features for the digitization and classification
         # tasks.
         features = extract_features(record)
-
         digitization_features.append(features)
-
         # Some images may not be labeled...
         labels = load_labels(record)
-        if any(label for label in labels):
-            classification_features.append(features)
-            classification_labels.append(labels)
-
-    # ... but we expect some images to be labeled for classification.
-    if not classification_labels:
-        raise Exception('There are no labels for the data.')
 
     # Train the models.
     if verbose:
@@ -252,7 +221,7 @@ def train_models(data_folder, model_folder, verbose):
     # Train the classification model. If you are not training a classification model, then you can remove this part of the code.
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=96, shuffle=True)
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -262,8 +231,8 @@ def train_models(data_folder, model_folder, verbose):
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
 
-    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-    validloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    trainloader = DataLoader(train_dataset, batch_size=96, shuffle=True)
+    validloader = DataLoader(test_dataset, batch_size=96, shuffle=False)
 
     # Define the model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -275,7 +244,7 @@ def train_models(data_folder, model_folder, verbose):
     criterion = F.binary_cross_entropy
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-    num_epochs = 5
+    num_epochs = 50
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -385,13 +354,7 @@ def run_models(record, digitization_model, classification_model, verbose):
     # print(record)
     all_preds = []
     # dx = []
-    image_path = os.path.join(record + '-0.png')
-    # print(image_path)
-    # dx_name = os.path.join(record, record_name)
-    # dx.append(load_dx(dx_name))
-    # print(dx)
-    image = Image.open(image_path).convert('RGB')
-    # print("image",image)
+    image = load_images(record)[0].convert('RGB')
     image_tensor = transform(image).unsqueeze(0).to(device)
     #print(classes)
     with torch.no_grad():
@@ -419,7 +382,7 @@ def run_models(record, digitization_model, classification_model, verbose):
             selected_labels = mlb.inverse_transform(last_label_df)
             selected_labels = [','.join(labels) for labels in selected_labels]
 
-        print(f'Image: {image_path}, Predictions: {selected_labels}')  # 假设每轮循环处理的是一张图片
+        print('Predictions:' ,selected_labels)  # 假设每轮循环处理的是一张图片
 
     return signal, selected_labels
 ################################################################################
@@ -430,13 +393,8 @@ def run_models(record, digitization_model, classification_model, verbose):
 
 # Extract features.
 def extract_features(record):
-    images = load_images(record)
-    mean = 0.0
-    std = 0.0
-    for image in images:
-        image = np.asarray(image)
-        mean += np.mean(image)
-        std += np.std(image)
+    mean = 200
+    std = 50
     return np.array([mean, std])
 
 # Save your trained models.
