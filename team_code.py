@@ -221,7 +221,7 @@ def train_models(data_folder, model_folder, verbose):
     # Train the classification model. If you are not training a classification model, then you can remove this part of the code.
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=96, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -231,8 +231,8 @@ def train_models(data_folder, model_folder, verbose):
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
 
-    trainloader = DataLoader(train_dataset, batch_size=96, shuffle=True)
-    validloader = DataLoader(test_dataset, batch_size=96, shuffle=False)
+    trainloader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+    validloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
     # Define the model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
