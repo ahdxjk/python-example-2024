@@ -44,6 +44,10 @@ class HWDownsampling(nn.Module):
         super(HWDownsampling, self).__init__()
         self.wt = DWTForward(J=1, wave='haar', mode='zero')
         self.conv_bn_relu = nn.Sequential(
+            nn.Conv2d(in_channel * 4, in_channel * 4, kernel_size=1, stride=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel * 4, in_channel * 4, kernel_size=3, stride=1),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_channel * 4, out_channel, kernel_size=1, stride=1),
             nn.BatchNorm2d(out_channel),
             nn.ReLU(inplace=True),
