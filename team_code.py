@@ -235,7 +235,10 @@ def train_models(data_folder, model_folder, verbose):
     # Train the classification model. If you are not training a classification model, then you can remove this part of the code.
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
+
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+
+
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -248,6 +251,7 @@ def train_models(data_folder, model_folder, verbose):
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     validloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
+
     # Define the model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     local_weights_path = "./model/classification_model.pth"
@@ -259,7 +263,7 @@ def train_models(data_folder, model_folder, verbose):
     criterion = F.binary_cross_entropy
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-    num_epochs = 30
+    num_epochs = 1
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -416,14 +420,14 @@ def extract_features(record):
 def save_models(model_folder, digitization_model=None, classification_model=None,mlb = None , classes=None):
     if digitization_model is not None:
         d = {'model': digitization_model}
-        filename = os.path.join(model_folder, 'digitization_model.sav')
+        filename = os.path.join(model_folder, 'digitization_model_train.sav')
         joblib.dump(d, filename, protocol=0)
 
     if classification_model is not None:
-        filename = os.path.join(model_folder, 'classification_model.pth')
+        filename = os.path.join(model_folder, 'classification_model_train.pth')
         torch.save(classification_model.state_dict(), filename)
         d = {'model': classification_model,'mlb': mlb , 'classes': classes}
-        filename = os.path.join(model_folder, 'classification_model.sav')
+        filename = os.path.join(model_folder, 'classification_model_train.sav')
         joblib.dump(d, filename, protocol=0)
 
 
