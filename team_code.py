@@ -10,7 +10,6 @@
 from torch.utils.data import DataLoader
 from PIL.Image import Image
 from sklearn.preprocessing import MultiLabelBinarizer
-from torchvision.models import efficientnet_b3
 import torch.nn.functional as F
 from torchvision.transforms import ToTensor
 from torchvision.transforms import ToPILImage
@@ -21,6 +20,7 @@ from torchvision import  transforms
 from torch.utils.data import DataLoader
 from torch import nn, optim
 import torch
+from V2_model import  *
 from PIL import Image
 import  pandas as pd
 from helper_code import *
@@ -28,9 +28,14 @@ from helper_code import *
 
 import warnings
 from sklearn.exceptions import InconsistentVersionWarning
+import torch.backends.cudnn as cudnn
+cudnn.deterministic = True
+cudnn.benchmark = True
+torch.backends.cudnn.enabled = True
 
 # 忽略 InconsistentVersionWarning
 warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
+
 ################################################################################
 #
 # Required functions. Edit these functions to add your code, but do not change the arguments of the functions.
@@ -42,21 +47,29 @@ warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 class HWDownsampling(nn.Module):
     def __init__(self, in_channel, out_channel):
         super(HWDownsampling, self).__init__()
-        self.wt = DWTForward(J=1, wave='haar', mode='zero')
+        # 假设DWTForward是自定义层，确保它支持CUDA张量
+        self.wt = DWTForward(J=1, wave='haar', mode='zero').to('cuda')
         self.conv_bn_relu = nn.Sequential(
+            nn.Conv2d(in_channel * 4, in_channel * 4, kernel_size=1, stride=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(in_channel * 4, in_channel * 4, kernel_size=3, stride=1),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_channel * 4, out_channel, kernel_size=1, stride=1),
             nn.BatchNorm2d(out_channel),
             nn.ReLU(inplace=True),
-        )
+        ).to('cuda')  # 将整个序列移动到GPU
 
     def forward(self, x):
+        # 确保输入x在GPU上
+        x = x.to('cuda')
         yL, yH = self.wt(x)
+        # 以下操作需要确保所有张量都在GPU上
         y_HL = yH[0][:, :, 0, ::]
         y_LH = yH[0][:, :, 1, ::]
         y_HH = yH[0][:, :, 2, ::]
         x = torch.cat([yL, y_HL, y_LH, y_HH], dim=1)
-        x = self.conv_bn_relu(x)
-        return x
+        conv_x = self.conv_bn_relu(x)
+        return conv_x
 
 #预处理其数据
 class CustomDataset(Dataset):
@@ -108,6 +121,7 @@ def img_proprecessing(img):
     # 已经将图片消除网格
     transform = ToTensor()
     image_data = transform(image_data)  # 将PIL图像转换为Tensor
+    image_data.to('cuda')
 
     # 添加一个批次维度，因为PyTorch模型通常期望这样
     image_data = image_data.unsqueeze(0)
@@ -221,7 +235,7 @@ def train_models(data_folder, model_folder, verbose):
     # Train the classification model. If you are not training a classification model, then you can remove this part of the code.
     # Dataset loading
     dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=96, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -231,20 +245,21 @@ def train_models(data_folder, model_folder, verbose):
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
 
-    trainloader = DataLoader(train_dataset, batch_size=96, shuffle=True)
-    validloader = DataLoader(test_dataset, batch_size=96, shuffle=False)
+    trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+    validloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # Define the model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    local_weights_path = "./efficientnetb3.pth"
-    model = efficientnet_b3(num_classes=len(dataset.img_labels.columns) -1 )
+    local_weights_path = "./model/classification_model.pth"
+    model = EfficientNetV2(efficientnet_v2_s_cfg, 0.2, 0.2, num_classes=len(dataset.img_labels.columns) -1)
+    model.load_state_dict(torch.load(local_weights_path))
     model = model.to(device)
 
     # Loss function and optimizer
     criterion = F.binary_cross_entropy
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-    num_epochs = 1
+    num_epochs = 30
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -401,12 +416,22 @@ def extract_features(record):
 def save_models(model_folder, digitization_model=None, classification_model=None,mlb = None , classes=None):
     if digitization_model is not None:
         d = {'model': digitization_model}
-        filename = os.path.join(model_folder, 'digitization_model_train.sav')
+        filename = os.path.join(model_folder, 'digitization_model.sav')
         joblib.dump(d, filename, protocol=0)
 
     if classification_model is not None:
-        filename = os.path.join(model_folder, 'classification_model_train.pth')
+        filename = os.path.join(model_folder, 'classification_model.pth')
         torch.save(classification_model.state_dict(), filename)
         d = {'model': classification_model,'mlb': mlb , 'classes': classes}
-        filename = os.path.join(model_folder, 'classification_model_train.sav')
+        filename = os.path.join(model_folder, 'classification_model.sav')
         joblib.dump(d, filename, protocol=0)
+
+
+efficientnet_v2_s_cfg = [
+    ["FusedMBConv", 1, 3, 1, 24, 24, 2],
+    ["FusedMBConv", 4, 3, 2, 24, 48, 4],
+    ["FusedMBConv", 4, 3, 2, 48, 64, 4],
+    ["MBConv", 4, 3, 2, 64, 128, 6],
+    ["MBConv", 6, 3, 1, 128, 160, 9],
+    ["MBConv", 6, 3, 2, 160, 256, 15],
+]
