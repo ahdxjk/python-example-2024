@@ -73,32 +73,25 @@ class HWDownsampling(nn.Module):
 
 #预处理其数据
 class CustomDataset(Dataset):
-    def __init__(self, annotations_file, img_dir, transform=None, target_transform=None):
-        self.img_labels = pd.read_csv(annotations_file)
-        self.img_dir = img_dir
+    def __init__(self, image_path_list, label_list, transform=None):
+        self.image_path_list = image_path_list
+        self.label_list = label_list
         self.transform = transform
-        self.target_transform = target_transform
 
     def __len__(self):
-        return len(self.img_labels)
+        return len(self.image_path_list)
 
-    def __getitem__(self, idx):
-        # 获取图像路径
-        img_name = self.img_labels.iloc[idx, 0]
-        img_path = os.path.join(self.img_dir, img_name)
+    def __getitem__(self,idx):
+        img_path = self.image_path_list[idx]
         image = Image.open(img_path).convert("RGB")
-
-        # 获取标签（多标签）
-        labels = self.img_labels.iloc[idx, 1:].values.astype('float')
+        # 获取标签
+        labels = self.label_list[idx]
+        # 确保标签是正确的数据类型，例如，如果标签是列表或数组，可能需要转换为张量
         labels = torch.tensor(labels, dtype=torch.float32)
 
         # 应用图像变换
         if self.transform:
             image = self.transform(image)
-
-        # 应用标签变换（如果有）
-        if self.target_transform:
-            labels = self.target_transform(labels)
 
         return image, labels
 # Train your digitization model.
@@ -166,23 +159,27 @@ def train_models(data_folder, model_folder, verbose):
     classification_labels = list()
     #读取每个图片的标签
     dxs = list()
-    image_path_list = []
-    image_name_list = []
-
+    labels = []
+    images_list = list()
     if verbose:
         print('Extracting features and labels from the data...')
 
     for i in range(num_records):
-        image_path_new = os.path.join(data_folder, records[i])
-        images_name = get_image_files(image_path_new)
-        for i in range(len(images_name)):
-            image_name_list.append(os.path.join(data_folder, images_name[i]))
-        image_path_list.append(image_path_new)
-        #print(image_path_new)
-        dx = load_labels(image_path_new)
-        if dx:
-            dxs.append(dx)
+        if verbose:
+            width = len(str(num_records))
+            print(f'- {i + 1:>{width}}/{num_records}: {records[i]}...')
+
+        record = os.path.join(data_folder, records[i])
+        dx = load_labels(record)
+        dxs.append(dx)
+        path = os.path.split(record)[0]
+        image_files = get_image_files(record)
+        for image_file in image_files:
+            image_file_path = os.path.join(path, image_file)
+            images_list.append(image_file_path)
+
     #print('标签：',dxs)
+
     # 初始化 MultiLabelBinarizer
     mlb = MultiLabelBinarizer()
     # 对标签进行 fit
@@ -191,16 +188,6 @@ def train_models(data_folder, model_folder, verbose):
     encoded_labels = mlb.transform(dxs)
     print("Classes:", mlb.classes_)
     print("Encoded labels:\n", encoded_labels)
-    labels_df = pd.DataFrame(encoded_labels, columns=mlb.classes_)
-    df = pd.DataFrame({
-        'image_names': image_name_list,
-    })
-    df = pd.concat([df, labels_df], axis=1)
-    # Save the DataFrame as a CSV file
-    df.to_csv('./annotations.csv', index=False)
-    #去重操作
-    df_unique = labels_df.drop_duplicates()
-    df_unique.to_csv('./labels.csv', index=False)
     #是为了下一步保存进csv
     transform = transforms.Compose([
         # 插入自定义的裁剪操作
@@ -222,7 +209,8 @@ def train_models(data_folder, model_folder, verbose):
         features = extract_features(record)
         digitization_features.append(features)
         # Some images may not be labeled...
-        labels = load_labels(record)
+        label = load_labels(record)
+        labels.append(label)
 
     # Train the models.
     if verbose:
@@ -234,11 +222,8 @@ def train_models(data_folder, model_folder, verbose):
 
     # Train the classification model. If you are not training a classification model, then you can remove this part of the code.
     # Dataset loading
-    dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
-
+    dataset = CustomDataset(image_path_list=images_list, label_list=encoded_labels, transform=transform)
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
-
-
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -251,11 +236,10 @@ def train_models(data_folder, model_folder, verbose):
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     validloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-
     # Define the model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     local_weights_path = "./model/classification_model.pth"
-    model = EfficientNetV2(efficientnet_v2_s_cfg, 0.2, 0.2, num_classes=len(dataset.img_labels.columns) -1)
+    model = EfficientNetV2(efficientnet_v2_s_cfg, 0.2, 0.2, num_classes=len(mlb.classes_))
     model.load_state_dict(torch.load(local_weights_path))
     model = model.to(device)
 
@@ -411,23 +395,28 @@ def run_models(record, digitization_model, classification_model, verbose):
 ################################################################################
 
 # Extract features.
+# def extract_features(record):
+#     mean = 200
+#     std = 50
+#     return np.array([mean, std])
 def extract_features(record):
-    mean = 200
-    std = 50
+    mean = 0.0
+    std = 0.0
     return np.array([mean, std])
 
 # Save your trained models.
 def save_models(model_folder, digitization_model=None, classification_model=None,mlb = None , classes=None):
     if digitization_model is not None:
         d = {'model': digitization_model}
-        filename = os.path.join(model_folder, 'digitization_model_train.sav')
+        filename = os.path.join(model_folder, 'digitization_model.sav')
         joblib.dump(d, filename, protocol=0)
 
     if classification_model is not None:
-        filename = os.path.join(model_folder, 'classification_model_train.pth')
+        filename = os.path.join(model_folder, 'classification_model.pth')
         torch.save(classification_model.state_dict(), filename)
         d = {'model': classification_model,'mlb': mlb , 'classes': classes}
-        filename = os.path.join(model_folder, 'classification_model_train.sav')
+        print(classes)
+        filename = os.path.join(model_folder, 'classification_model.sav')
         joblib.dump(d, filename, protocol=0)
 
 

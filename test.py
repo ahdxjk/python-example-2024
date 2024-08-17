@@ -35,7 +35,7 @@ def extract_info():
     features = torch.tensor([age, sex, weight, height], dtype=torch.int)
     return features
 
-train_models("E:\cinc2024\python-example-2024-main/train", "Y:\python-example-2024-main\model", verbose=1) ###
+#train_models("E:\cinc2024\python-example-2024-main/train", "Y:\python-example-2024-main\model", verbose=1) ###
 #print(extract_info())
 info = "Y:\python-example-2024-main\ptb-xl/records500_hidden/00000"
 records = find_records(info)
