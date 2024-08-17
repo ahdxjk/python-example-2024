@@ -247,7 +247,7 @@ def train_models(data_folder, model_folder, verbose):
     criterion = F.binary_cross_entropy
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-    num_epochs = 30
+    num_epochs = 1
     train_losses = []
     train_accuracies = []
     valid_losses = []
