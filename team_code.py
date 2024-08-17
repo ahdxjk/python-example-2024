@@ -222,7 +222,11 @@ def train_models(data_folder, model_folder, verbose):
 
     # Train the classification model. If you are not training a classification model, then you can remove this part of the code.
     # Dataset loading
+<<<<<<< HEAD
     dataset = CustomDataset(image_path_list=images_list, label_list=encoded_labels, transform=transform)
+=======
+    dataset = CustomDataset(annotations_file='./annotations.csv', img_dir=data_folder, transform=transform)
+>>>>>>> 67fcf7564facfb5ce77797506c185d52df68d760
     dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
     train_losses = []
     train_accuracies = []
@@ -248,6 +252,7 @@ def train_models(data_folder, model_folder, verbose):
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
     num_epochs = 1
+    num_epochs = 30
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -415,7 +420,10 @@ def save_models(model_folder, digitization_model=None, classification_model=None
         filename = os.path.join(model_folder, 'classification_model.pth')
         torch.save(classification_model.state_dict(), filename)
         d = {'model': classification_model,'mlb': mlb , 'classes': classes}
+<<<<<<< HEAD
         print(classes)
+=======
+>>>>>>> 67fcf7564facfb5ce77797506c185d52df68d760
         filename = os.path.join(model_folder, 'classification_model.sav')
         joblib.dump(d, filename, protocol=0)
 
@@ -427,4 +435,4 @@ efficientnet_v2_s_cfg = [
     ["MBConv", 4, 3, 2, 64, 128, 6],
     ["MBConv", 6, 3, 1, 128, 160, 9],
     ["MBConv", 6, 3, 2, 160, 256, 15],
-]
+]]
