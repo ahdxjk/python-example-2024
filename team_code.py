@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
-
+from thinc.util import torch_version
 ################################################################################
 #
 # Optional libraries, functions, and variables. You can change or remove them.
 #
 ################################################################################
+import torchvision.models as models
 from torch.utils.data import DataLoader
 from PIL.Image import Image
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -24,8 +25,6 @@ from V2_model import  *
 from PIL import Image
 import  pandas as pd
 from helper_code import *
-
-
 import warnings
 from sklearn.exceptions import InconsistentVersionWarning
 import torch.backends.cudnn as cudnn
@@ -232,14 +231,13 @@ def train_models(data_folder, model_folder, verbose):
     train_size = int(0.8 * len(dataset))
     test_size = len(dataset) - train_size
     train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
-
     trainloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     validloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
     # Define the model
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     local_weights_path = "./model/classification_model.pth"
-    model = EfficientNetV2(efficientnet_v2_s_cfg, 0.2, 0.2, num_classes=len(mlb.classes_))
+    model = models.GoogLeNet(num_classes=len(mlb.classes_))
     model.load_state_dict(torch.load(local_weights_path))
     model = model.to(device)
 
@@ -247,7 +245,7 @@ def train_models(data_folder, model_folder, verbose):
     criterion = F.binary_cross_entropy
     optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-5)
 
-    num_epochs = 30
+    num_epochs = 1
     train_losses = []
     train_accuracies = []
     valid_losses = []
@@ -260,11 +258,10 @@ def train_models(data_folder, model_folder, verbose):
         for inputs, labels in trainloader:
             inputs = inputs.to(device)
             labels = labels.to(device).float()  # 确保标签是浮点数类型
-
             optimizer.zero_grad()
-
             outputs = model(inputs)  # 模型输出 logits
-            loss = F.binary_cross_entropy_with_logits(outputs, labels)  # 适用于多标签分类的损失函数
+            logits = outputs[0]
+            loss = F.binary_cross_entropy_with_logits(logits, labels)  # 适用于多标签分类的损失函数
 
             loss.backward()
             optimizer.step()
@@ -272,7 +269,7 @@ def train_models(data_folder, model_folder, verbose):
             running_loss += loss.item() * inputs.size(0)
 
             # 使用 sigmoid 将 logits 转换为概率
-            preds = torch.sigmoid(outputs)
+            preds = torch.sigmoid(logits)
             # 将概率与阈值 0.5 比较进行二值化
             preds = preds >= 0.5
             running_corrects += torch.sum(preds == labels).item()
